@@ -116,7 +116,8 @@ http://localhost:3000
 
 | Resource | Link |
 |---------|------|
-| UML Diagram | *To be added* |
+| Class UML Diagram | *To be added* |
+| Sequence UML Diagram | |
 | Backend API | `/api/buildings`, `/api/query` |
 | OSM Query Definition | See `data_loader.py` |
 | Natural-Language Engine | `llm.py` |
