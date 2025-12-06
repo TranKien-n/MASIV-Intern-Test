@@ -142,20 +142,24 @@ http://localhost:3000
 ## Project Structure
 
 ```
-backend/
-  app.py
-  data_loader.py
-  filters.py
-  llm.py
-  buildings_cache.json
-
-frontend/
-  src/
-    App.js
-    Map3D.js
-    api.js
-    App.css
+src/
+  backend/
+    app.py
+    data_loader.py
+    filters.py
+    llm.py
+    buildings_cache.json
+    requirements.txt
+  frontend/
+    src/
+      App.js
+      Map3D.js
+      api.js
+      App.css
     ...
+uml/
+  ClassDiagram.png
+  SequenceDiagram.png
 README.md
 ```
 

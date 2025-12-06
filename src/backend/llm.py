@@ -22,6 +22,20 @@ ZONING_KEYWORDS = (
 
 RESET_KEYWORDS = ("reset", "clear", "show all", "all buildings")
 
+# --- NEW: ordinal words map ---
+ORDINAL_WORDS = {
+    "first": 1,
+    "second": 2,
+    "third": 3,
+    "fourth": 4,
+    "fifth": 5,
+    "sixth": 6,
+    "seventh": 7,
+    "eighth": 8,
+    "ninth": 9,
+    "tenth": 10,
+}
+
 
 def _to_float(s):
     try:
@@ -60,6 +74,28 @@ def _convert_units(q_lower: str, number: float) -> float:
     return number
 
 
+# --- NEW: ordinal helper ---
+def _match_ordinal(q_lower: str):
+    """
+    Return an integer ordinal (2 for 'second', 3 for '3rd', etc.)
+    or None if no ordinal is found.
+    """
+    # word ordinals: "second", "third", ...
+    for word, n in ORDINAL_WORDS.items():
+        if word in q_lower:
+            return n
+
+    # numeric ordinals: "2nd", "3rd", "4th"
+    m = re.search(r"\b(\d+)(st|nd|rd|th)\b", q_lower)
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            return None
+
+    return None
+
+
 def interpret_query(query: str):
     """
     Main entry point used by Flask.
@@ -79,7 +115,42 @@ def interpret_query(query: str):
     if any(kw in q_lower for kw in RESET_KEYWORDS):
         return None
 
-    # --- Special TOP/BOTTOM intents ---
+    # --- NEW: Ordinal-based ranking: "second tallest", "3rd most expensive" ---
+    ordinal = _match_ordinal(q_lower)
+    if ordinal is not None:
+        # Height-based: "second tallest", "3rd highest building"
+        if "tallest" in q_lower or "highest" in q_lower or "tall" in q_lower:
+            return {
+                "attribute": "height",
+                "operator": "TOP",
+                "value": ordinal,  # highlight top N, where N is the ordinal
+            }
+
+        # Value-based: "second most expensive", "3rd priciest"
+        if "most expensive" in q_lower or "priciest" in q_lower or "highest value" in q_lower:
+            return {
+                "attribute": "value",
+                "operator": "TOP",
+                "value": ordinal,
+            }
+
+        # Value-based, bottom: "second cheapest", "3rd least expensive"
+        if "cheapest" in q_lower or "least expensive" in q_lower or "lowest value" in q_lower:
+            return {
+                "attribute": "value",
+                "operator": "BOTTOM",
+                "value": ordinal,
+            }
+
+        # Height-based, bottom: "second shortest", "3rd lowest building"
+        if "shortest" in q_lower or "lowest building" in q_lower or "short" in q_lower:
+            return {
+                "attribute": "height",
+                "operator": "BOTTOM",
+                "value": ordinal,
+            }
+
+    # --- Special TOP/BOTTOM intents (non-ordinal numeric) ---
 
     # Highest / tallest building(s)
     if "highest" in q_lower or "tallest" in q_lower:
