@@ -33,6 +33,8 @@ function App() {
   const [loadingQuery, setLoadingQuery] = useState(false);
   const [loadingBuildings, setLoadingBuildings] = useState(true);
 
+  const [resetToken, setResetToken] = useState(0); // token that tells Map3D to perform a full reset
+
   // Last parsed filter (for debug panel)
   const [lastFilter, setLastFilter] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
@@ -67,6 +69,12 @@ function App() {
    */
   async function runAndApplyQuery(query) {
     if (!query) return;
+
+    // If there is an active highlight or selection, "auto-press" reset first
+    if (filteredIds.length > 0 || selected) {
+      handleResetHighlights();
+    }
+
     setLoadingQuery(true);
 
     try {
@@ -102,6 +110,9 @@ function App() {
     setFilteredIds([]);
     setLastFilter(null);
     setSelected(null);
+    
+    // Bump the token so Map3D knows to reset camera too
+    setResetToken((t) => t + 1);
   }
 
   // ----------------------------------------------------
@@ -226,6 +237,7 @@ function App() {
                   filteredIds={filteredIds}
                   selectedBuilding={selected}
                   onSelectBuilding={setSelected}
+                  resetToken={resetToken}
                 />
               )}
             </div>

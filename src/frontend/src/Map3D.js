@@ -38,6 +38,7 @@ export default function Map3D({
   filteredIds,
   selectedBuilding,
   onSelectBuilding,
+  resetToken,
 }) {
   const mountRef = useRef(null); // container DOM node
   const meshesRef = useRef([]); // all building meshes
@@ -348,7 +349,7 @@ export default function Map3D({
       return;
     }
 
-    // No focus set: go back to base center
+    // No focus set go back to base center
     if (!focusBuildings || focusBuildings.length === 0) {
       const center = baseCenterRef.current;
       const span = baseSpanRef.current;
@@ -401,6 +402,25 @@ export default function Map3D({
 
     animatingRef.current = true; // trigger smooth animation
   }, [filteredIds, selectedBuilding, buildings]);
+
+  // Auto-reset query if there are any already present
+  useEffect(() => {
+  if (!cameraRef.current || buildings.length === 0) return;
+
+  const center = baseCenterRef.current;
+  const span = baseSpanRef.current;
+
+  // Reset camera smoothly to base view
+  targetCenterRef.current.set(center.x, center.y, 0);
+  cameraPosTargetRef.current.set(
+    center.x + span * 0.9,
+    center.y - span * 0.9,
+    span * 1.5
+  );
+
+  animatingRef.current = true;
+}, [resetToken, buildings]);
+
 
   // ----------------------------------------------------
   // Render container + hover tooltip
