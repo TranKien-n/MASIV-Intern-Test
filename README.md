@@ -116,8 +116,8 @@ http://localhost:3000
 
 | Resource | Link |
 |---------|------|
-| Class UML Diagram | [View Class UML](https://github.com/TranKien-n/MASIV-Intern-Test/uml/ClassDiagram.png) |
-| Sequence UML Diagram | [View Sequence UML](https://github.com/TranKien-n/MASIV-Intern-Test/uml/SequenceDiagram.png) |
+| Class UML Diagram | [View Class UML](https://github.com/TranKien-n/MASIV-Intern-Test/blob/main/uml/ClassDiagram.png) |
+| Sequence UML Diagram | [View Sequence UML](https://github.com/TranKien-n/MASIV-Intern-Test/blob/main/uml/SequenceDiagram.png) |
 | Backend API | `/api/buildings`, `/api/query` |
 | OSM Query Definition | See `data_loader.py` |
 | Natural-Language Engine | `llm.py` |
