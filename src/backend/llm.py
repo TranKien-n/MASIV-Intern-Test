@@ -1,10 +1,23 @@
-# Translate a natural language query into a simple filter dictionary:
-#   {"attribute": "height" | "value" | "zoning" | "type",
-#    "operator": ">" | "<" | "=" | "BETWEEN" | "TOP" | "BOTTOM",
-#    "value": number | string | [low, high]}
+"""
+Hybrid natural-language query interpreter.
 
-import re
+Pipeline:
+  1. Try Hugging Face Inference API (if configured via HF_API_KEY).
+  2. If HF call fails or returns invalid output, fall back to a
+     deterministic rule-based interpreter.
+
+All paths return either:
+  - a filter dict of the form:
+        {
+          "attribute": "height" | "value" | "zoning" | "type",
+          "operator": ">" | "<" | "=" | "BETWEEN" | "TOP" | "BOTTOM",
+          "value": number | string | [low, high]
+        }
+  - or None if the query should be treated as "no filter".
+"""
+
 import os
+import re
 import json
 import requests
 
@@ -16,19 +29,53 @@ HF_MODEL_ID = os.getenv("HF_MODEL_ID", "mistralai/Mixtral-8x7B-Instruct")
 HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}"
 
 HEIGHT_KEYWORDS = (
-    "height", "tall", "taller", "tallest", "short", "shorter",
-    "storeys", "stories", "levels", "floor", "floors",
-    "feet", "foot", "ft", "meter", "metre", "m"
+    "height",
+    "tall",
+    "taller",
+    "tallest",
+    "short",
+    "shorter",
+    "storeys",
+    "stories",
+    "levels",
+    "floor",
+    "floors",
+    "feet",
+    "foot",
+    "ft",
+    "meter",
+    "metre",
+    "m",
 )
 
 VALUE_KEYWORDS = (
-    "value", "worth", "price", "cost", "expensive", "cheap",
-    "cheaper", "cheapest", "priciest", "most expensive", "least expensive",
-    "assessment", "assessed", "dollar", "dollars", "usd"
+    "value",
+    "worth",
+    "price",
+    "cost",
+    "expensive",
+    "cheap",
+    "cheaper",
+    "cheapest",
+    "priciest",
+    "most expensive",
+    "least expensive",
+    "assessment",
+    "assessed",
+    "dollar",
+    "dollars",
+    "usd",
 )
 
 ZONING_KEYWORDS = (
-    "zoning", "zone", "rc-", "c-", "mu-", "residential", "commercial", "mixed"
+    "zoning",
+    "zone",
+    "rc-",
+    "c-",
+    "mu-",
+    "residential",
+    "commercial",
+    "mixed",
 )
 
 RESET_KEYWORDS = ("reset", "clear", "show all", "all buildings")
@@ -60,41 +107,38 @@ def _guess_attribute(q_lower: str, original: str) -> str:
     """
     if any(k in q_lower for k in HEIGHT_KEYWORDS):
         return "height"
-    # If they mention money words OR use a '$', assume value
     if any(k in q_lower for k in VALUE_KEYWORDS) or "$" in original:
         return "value"
     if any(k in q_lower for k in ZONING_KEYWORDS):
-        # could be type or zoning; we keep zoning because we map types to codes
         return "zoning"
-    # Default attribute (matches assignment example "over 100 feet")
+    # Default attribute (matches example "over 100 feet")
     return "height"
 
 
 def _convert_units(q_lower: str, number: float) -> float:
     """
     Convert number to meters for height queries.
-    - If query mentions feet/ft, convert feet -> meters
-    - If query mentions meters/m, keep as-is
-    For value queries we assume the number is already in dollars.
+
+    - If query mentions feet/ft, convert feet -> meters.
+    - If meters/m, leave as-is.
+    For value queries we assume input is already in dollars.
     """
     if "feet" in q_lower or "foot" in q_lower or "ft" in q_lower:
-        # 1 foot = 0.3048 m
-        return number * 0.3048
-    # default: keep number as is
+        return number * 0.3048  # feet -> meters
     return number
 
 
 def _match_ordinal(q_lower: str):
     """
-    Return an integer ordinal (2 for 'second', 3 for '3rd', etc.)
+    Return an integer ordinal (2 for 'second', 3 for '3rd', etc.),
     or None if no ordinal is found.
     """
-    # word ordinals: "second", "third", ...
+    # Word ordinals: "second", "third", ...
     for word, n in ORDINAL_WORDS.items():
         if word in q_lower:
             return n
 
-    # numeric ordinals: "2nd", "3rd", "4th"
+    # Numeric ordinals: "2nd", "3rd", "4th", ...
     m = re.search(r"\b(\d+)(st|nd|rd|th)\b", q_lower)
     if m:
         try:
@@ -106,11 +150,19 @@ def _match_ordinal(q_lower: str):
 
 
 # --------------------------------------------------------------------
-# RULE-BASED INTERPRETER (your original logic)
+# RULE-BASED INTERPRETER
 # --------------------------------------------------------------------
 def _interpret_rule_based(query: str):
     """
-    Your existing deterministic interpreter.
+    Deterministic interpreter used as a fallback from the LLM.
+
+    Supports:
+      - TOP / BOTTOM (tallest, cheapest, etc.)
+      - Ordinals ("second tallest")
+      - Ranges ("between X and Y")
+      - Inequalities ("over X", "under Y")
+      - Zoning / type queries ("commercial buildings")
+      - Simple defaults for "tall", "short", "expensive", "cheap"
     """
     if not query or not query.strip():
         return None
@@ -120,7 +172,7 @@ def _interpret_rule_based(query: str):
     # Remove currency symbols and commas so "$1,000,000" -> "1000000"
     q_clean = q_lower.replace("$", "").replace(",", "")
 
-    # --- Reset / show all ---
+    # Reset / show all
     if any(kw in q_lower for kw in RESET_KEYWORDS):
         return None
 
@@ -132,11 +184,15 @@ def _interpret_rule_based(query: str):
             return {
                 "attribute": "height",
                 "operator": "TOP",
-                "value": ordinal,  # highlight top N, where N is the ordinal
+                "value": ordinal,
             }
 
         # Value-based: "second most expensive", "3rd priciest"
-        if "most expensive" in q_lower or "priciest" in q_lower or "highest value" in q_lower:
+        if (
+            "most expensive" in q_lower
+            or "priciest" in q_lower
+            or "highest value" in q_lower
+        ):
             return {
                 "attribute": "value",
                 "operator": "TOP",
@@ -144,7 +200,11 @@ def _interpret_rule_based(query: str):
             }
 
         # Value-based, bottom: "second cheapest", "3rd least expensive"
-        if "cheapest" in q_lower or "least expensive" in q_lower or "lowest value" in q_lower:
+        if (
+            "cheapest" in q_lower
+            or "least expensive" in q_lower
+            or "lowest value" in q_lower
+        ):
             return {
                 "attribute": "value",
                 "operator": "BOTTOM",
@@ -152,7 +212,11 @@ def _interpret_rule_based(query: str):
             }
 
         # Height-based, bottom: "second shortest", "3rd lowest building"
-        if "shortest" in q_lower or "lowest building" in q_lower or "short" in q_lower:
+        if (
+            "shortest" in q_lower
+            or "lowest building" in q_lower
+            or "short" in q_lower
+        ):
             return {
                 "attribute": "height",
                 "operator": "BOTTOM",
@@ -160,38 +224,32 @@ def _interpret_rule_based(query: str):
             }
 
     # --- Special TOP/BOTTOM intents (non-ordinal numeric) ---
-
-    # Highest / tallest building(s)
     if "highest" in q_lower or "tallest" in q_lower:
-        # e.g. "highest building", "highlight tallest 3 buildings"
         m = re.search(r"(?:highest|tallest)\s+(\d+)", q_clean)
-        k = 1
-        if m:
-            k = int(m.group(1))
+        k = int(m.group(1)) if m else 1
         return {"attribute": "height", "operator": "TOP", "value": k}
 
-    # Shortest / lowest building(s)
     if "shortest" in q_lower or "lowest building" in q_lower:
         m = re.search(r"(?:shortest|lowest)\s+(\d+)", q_clean)
-        k = 1
-        if m:
-            k = int(m.group(1))
+        k = int(m.group(1)) if m else 1
         return {"attribute": "height", "operator": "BOTTOM", "value": k}
 
-    # Cheapest / least expensive
-    if "cheapest" in q_lower or "least expensive" in q_lower or "lowest value" in q_lower:
+    if (
+        "cheapest" in q_lower
+        or "least expensive" in q_lower
+        or "lowest value" in q_lower
+    ):
         m = re.search(r"(?:cheapest|least expensive)\s+(\d+)", q_clean)
-        k = 1
-        if m:
-            k = int(m.group(1))
+        k = int(m.group(1)) if m else 1
         return {"attribute": "value", "operator": "BOTTOM", "value": k}
 
-    # Most expensive / highest value
-    if "most expensive" in q_lower or "highest value" in q_lower or "priciest" in q_lower:
+    if (
+        "most expensive" in q_lower
+        or "highest value" in q_lower
+        or "priciest" in q_lower
+    ):
         m = re.search(r"(?:most expensive|priciest)\s+(\d+)", q_clean)
-        k = 1
-        if m:
-            k = int(m.group(1))
+        k = int(m.group(1)) if m else 1
         return {"attribute": "value", "operator": "TOP", "value": k}
 
     # --- Zoning / type intents ---
@@ -212,7 +270,8 @@ def _interpret_rule_based(query: str):
 
     # --- Range queries: "between X and Y" ---
     between_match = re.search(
-        r"between\s+(\d+(?:\.\d+)?)\s+and\s+(\d+(?:\.\d+)?)", q_clean
+        r"between\s+(\d+(?:\.\d+)?)\s+and\s+(\d+(?:\.\d+)?)",
+        q_clean,
     )
     if between_match:
         low = _to_float(between_match.group(1))
@@ -222,15 +281,12 @@ def _interpret_rule_based(query: str):
             if attr == "height":
                 low = _convert_units(q_lower, low)
                 high = _convert_units(q_lower, high)
-            return {
-                "attribute": attr,
-                "operator": "BETWEEN",
-                "value": [low, high],
-            }
+            return {"attribute": attr, "operator": "BETWEEN", "value": [low, high]}
 
     # --- "over / greater than / above" ---
     over_match = re.search(
-        r"(over|greater than|more than|above)\s+(\d+(?:\.\d+)?)", q_clean
+        r"(over|greater than|more than|above)\s+(\d+(?:\.\d+)?)",
+        q_clean,
     )
     if over_match:
         num = _to_float(over_match.group(2))
@@ -242,7 +298,8 @@ def _interpret_rule_based(query: str):
 
     # --- "under / less than / below" ---
     under_match = re.search(
-        r"(under|less than|below|smaller than)\s+(\d+(?:\.\d+)?)", q_clean
+        r"(under|less than|below|smaller than)\s+(\d+(?:\.\d+)?)",
+        q_clean,
     )
     if under_match:
         num = _to_float(under_match.group(2))
@@ -258,11 +315,7 @@ def _interpret_rule_based(query: str):
         if tokens:
             candidate = tokens[-1].upper()
             if re.match(r"^[A-Z]{1,3}-[A-Z0-9]+$", candidate):
-                return {
-                    "attribute": "zoning",
-                    "operator": "=",
-                    "value": candidate,
-                }
+                return {"attribute": "zoning", "operator": "=", "value": candidate}
 
     # --- Bare numeric with no explicit operator (assume "> number") ---
     nums = re.findall(r"(\d+(?:\.\d+)?)", q_clean)
@@ -293,8 +346,10 @@ def _interpret_rule_based(query: str):
 # --------------------------------------------------------------------
 def _call_hf_llm(query: str):
     """
-    Try to use a Hugging Face text generation model to produce
-    a filter JSON. Returns a dict or None on any failure.
+    Try to use a Hugging Face text-generation model to produce a filter JSON.
+
+    Returns:
+        dict | None: parsed filter dict on success, otherwise None.
     """
     if not HF_API_KEY:
         return None
@@ -337,13 +392,13 @@ User query: "{query}"
         resp.raise_for_status()
         data = resp.json()
 
-        # text-generation models typically return a list with "generated_text"
+        # Common HF text-generation response: list with "generated_text".
         if isinstance(data, list) and data and "generated_text" in data[0]:
             text = data[0]["generated_text"]
         else:
             text = str(data)
 
-        # Extract first {...} block from the text
+        # Extract first {...} block from the text.
         start = text.find("{")
         end = text.rfind("}")
         if start == -1 or end == -1 or end <= start:
@@ -352,7 +407,7 @@ User query: "{query}"
         json_str = text[start : end + 1]
         filt = json.loads(json_str)
 
-        # basic sanity check
+        # Basic sanity checks.
         if not isinstance(filt, dict):
             return None
         if "attribute" not in filt or "operator" not in filt:
@@ -380,7 +435,6 @@ def interpret_query(query: str):
         print("[HF_LLM] Using Hugging Face filter:", hf_filter)
         return hf_filter
 
-    # Fallback to your original deterministic logic
     rb_filter = _interpret_rule_based(query)
     print("[RULE_BASED] Using rule-based filter:", rb_filter)
     return rb_filter

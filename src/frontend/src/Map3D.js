@@ -1,8 +1,25 @@
+/**
+ * Map3D
+ * -----
+ * Three.js-based 3D map of Calgary buildings.
+ *
+ * Responsibilities:
+ *  - Create and manage a Three.js scene, camera, and OrbitControls
+ *  - Extrude building footprints into 3D meshes
+ *  - Highlight buildings based on filteredIds
+ *  - Support click-to-select and hover tooltips
+ *  - Smoothly move the camera when:
+ *      - a building is clicked, or
+ *      - exactly one building matches a query
+ */
+
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 
-// Choose a base color by building type / zoning
+/**
+ * Choose a base color by building type / zoning.
+ */
 function baseColorForBuilding(b) {
   const type = (b.type || "").toLowerCase();
   const zoning = (b.zoning || "").toUpperCase();
@@ -22,21 +39,28 @@ export default function Map3D({
   selectedBuilding,
   onSelectBuilding,
 }) {
-  const mountRef = useRef(null);
-  const meshesRef = useRef([]);
+  const mountRef = useRef(null); // container DOM node
+  const meshesRef = useRef([]); // all building meshes
   const cameraRef = useRef(null);
   const controlsRef = useRef(null);
 
+  // Target for orbit controls (what the camera "looks at")
   const targetCenterRef = useRef(new THREE.Vector3());
+  // Target camera position for smooth animation
   const cameraPosTargetRef = useRef(new THREE.Vector3());
+
+  // Base city center/span computed from all buildings
   const baseCenterRef = useRef(new THREE.Vector3());
   const baseSpanRef = useRef(100);
 
-  const animatingRef = useRef(false); // 🔹 are we currently auto-animating?
+  // Whether we are currently auto-animating the camera
+  const animatingRef = useRef(false);
 
   const [hoverInfo, setHoverInfo] = useState(null);
 
-  // --- Initial scene setup & rendering ---
+  // ----------------------------------------------------
+  // Initial scene setup & rendering (runs when buildings change)
+  // ----------------------------------------------------
   useEffect(() => {
     if (!mountRef.current || buildings.length === 0) return;
 
@@ -44,7 +68,7 @@ export default function Map3D({
     const width = container.clientWidth;
     const height = container.clientHeight;
 
-    // Compute base bounding box & average height (all buildings)
+    // Compute base bounding box & average height across all buildings
     let minX = Infinity,
       maxX = -Infinity;
     let minY = Infinity,
@@ -73,6 +97,7 @@ export default function Map3D({
     baseCenterRef.current.set(centerX, centerY, 0);
     baseSpanRef.current = span;
 
+    // Normalize heights so the scene feels reasonable regardless of raw values.
     const TARGET_AVG_VISUAL = span * 0.18;
     const HEIGHT_SCALE = avgH > 0 ? TARGET_AVG_VISUAL / avgH : 0.5;
 
@@ -87,20 +112,21 @@ export default function Map3D({
       span * 1.5
     );
     camera.position.copy(initialPos);
-    camera.up.set(0, 0, 1);
+    camera.up.set(0, 0, 1); // Z-up
     camera.lookAt(centerX, centerY, 0);
 
     cameraRef.current = camera;
     targetCenterRef.current.set(centerX, centerY, 0);
     cameraPosTargetRef.current.copy(initialPos);
-    animatingRef.current = false; // start with no auto animation
+    animatingRef.current = false;
 
+    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     renderer.setSize(width, height);
     container.appendChild(renderer.domElement);
 
-    // Controls
+    // Orbit controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
@@ -110,7 +136,7 @@ export default function Map3D({
     controls.maxPolarAngle = Math.PI / 2.05;
     controlsRef.current = controls;
 
-    // 🔹 If user starts interacting, stop auto animation
+    // If user starts interacting, cancel auto animation
     const cancelAnimation = () => {
       animatingRef.current = false;
     };
@@ -124,7 +150,7 @@ export default function Map3D({
     const ambient = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambient);
 
-    // Grid only (no plane/wall)
+    // Ground grid (no full plane)
     const groundSize = span * 2;
     const gridDivisions = 20;
     const grid = new THREE.GridHelper(
@@ -137,10 +163,10 @@ export default function Map3D({
     grid.position.set(centerX, centerY, 0.01);
     scene.add(grid);
 
+    // Create building meshes
     const meshes = [];
     meshesRef.current = meshes;
 
-    // Buildings
     buildings.forEach((b) => {
       const coords = b.footprint;
       if (!coords || coords.length < 3) return;
@@ -171,6 +197,7 @@ export default function Map3D({
 
       scene.add(mesh);
 
+      // Outline edges to visually separate buildings
       const edgeGeom = new THREE.EdgesGeometry(geom);
       const edgeMat = new THREE.LineBasicMaterial({ color: 0x444444 });
       const edges = new THREE.LineSegments(edgeGeom, edgeMat);
@@ -180,6 +207,7 @@ export default function Map3D({
       meshes.push(mesh);
     });
 
+    // Raycasting for click & hover
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -238,6 +266,7 @@ export default function Map3D({
 
     window.addEventListener("resize", handleResize);
 
+    // Animation loop: handles auto camera lerp + normal OrbitControls updates
     function animate() {
       requestAnimationFrame(animate);
 
@@ -269,12 +298,14 @@ export default function Map3D({
     }
     animate();
 
+    // Cleanup
     return () => {
       window.removeEventListener("resize", handleResize);
       renderer.domElement.removeEventListener("click", handleClick);
       renderer.domElement.removeEventListener("mousemove", handleMouseMove);
       renderer.domElement.removeEventListener("mouseleave", handleMouseLeave);
       controls.removeEventListener("start", cancelAnimation);
+
       container.removeChild(renderer.domElement);
       controls.dispose();
       renderer.dispose();
@@ -282,20 +313,24 @@ export default function Map3D({
     };
   }, [buildings, onSelectBuilding]);
 
-  // --- Highlight filtered buildings ---
+  // ----------------------------------------------------
+  // Highlight filtered buildings
+  // ----------------------------------------------------
   useEffect(() => {
     const meshes = meshesRef.current || [];
     meshes.forEach((m) => {
       const id = m.userData.id;
       if (filteredIds && filteredIds.includes(id)) {
-        m.material.color.set(0xff4444); // highlight
+        m.material.color.set(0xff4444); // highlighted color
       } else if (m.userData.baseColor) {
         m.material.color.copy(m.userData.baseColor);
       }
     });
   }, [filteredIds]);
 
-  // --- Smooth camera re-targeting on selection / filter ---
+  // ----------------------------------------------------
+  // Smooth camera re-targeting on selection / filter
+  // ----------------------------------------------------
   useEffect(() => {
     if (!cameraRef.current || buildings.length === 0) return;
 
@@ -348,27 +383,28 @@ export default function Map3D({
 
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    // make sure span isn't crazy tiny
     const span =
       Math.max(maxX - minX, maxY - minY) || baseSpanRef.current || 50;
 
-    // Use building height to set vertical focus – aim near mid/top, not at ground
-    const heightOffset = maxH > 0 ? maxH : span; // fallback if no heights
-    const targetZ = heightOffset * 0.3; // aim around middle of tall buildings
+    // Aim slightly below mid-height of the tallest focused building
+    const heightOffset = maxH > 0 ? maxH : span;
+    const targetZ = heightOffset * 0.3;
 
     targetCenterRef.current.set(centerX, centerY, targetZ);
 
     const distFactor = 1.2;
     cameraPosTargetRef.current.set(
       centerX + span * distFactor,
-      centerY - span * distFactor * 0.5, // a bit less horizontal tilt
-      heightOffset * 0.5 + span * 1.0 // keep camera above mid-height
+      centerY - span * distFactor * 0.5,
+      heightOffset * 0.5 + span * 1.0
     );
 
     animatingRef.current = true; // trigger smooth animation
   }, [filteredIds, selectedBuilding, buildings]);
 
-
+  // ----------------------------------------------------
+  // Render container + hover tooltip
+  // ----------------------------------------------------
   return (
     <div
       ref={mountRef}

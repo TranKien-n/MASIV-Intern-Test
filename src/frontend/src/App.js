@@ -1,3 +1,13 @@
+/**
+ * Top-level React application component.
+ *
+ * Responsibilities:
+ *  - Load building data from the backend
+ *  - Handle natural-language queries and preset queries
+ *  - Track currently highlighted and selected buildings
+ *  - Render MASIV-style layout, map, info panel, and debug panel
+ */
+
 import { useEffect, useState } from "react";
 import Map3D from "./Map3D";
 import { fetchBuildings, runQuery } from "./api";
@@ -12,19 +22,27 @@ const PRESET_QUERIES = [
 ];
 
 function App() {
+  // Raw building data from backend
   const [buildings, setBuildings] = useState([]);
+  // IDs currently highlighted by a query
   const [filteredIds, setFilteredIds] = useState([]);
+  // Currently selected building (clicked in 3D view)
   const [selected, setSelected] = useState(null);
-  const [loadingQuery, setLoadingQuery] = useState(false);
 
+  // Loading flags
+  const [loadingQuery, setLoadingQuery] = useState(false);
   const [loadingBuildings, setLoadingBuildings] = useState(true);
+
+  // Last parsed filter (for debug panel)
   const [lastFilter, setLastFilter] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
 
   const totalCount = buildings.length;
   const highlightedCount = filteredIds.length;
 
-  // Load buildings at startup
+  // ----------------------------------------------------
+  // Load buildings from backend on initial mount
+  // ----------------------------------------------------
   useEffect(() => {
     async function load() {
       try {
@@ -40,13 +58,24 @@ function App() {
     load();
   }, []);
 
+  // ----------------------------------------------------
+  // Query helpers
+  // ----------------------------------------------------
+
+  /**
+   * Run a query against the backend and update highlight state.
+   */
   async function runAndApplyQuery(query) {
     if (!query) return;
     setLoadingQuery(true);
+
     try {
       const { ids, filter } = await runQuery(query);
       setFilteredIds(ids);
       setLastFilter(filter);
+
+      // If the previously selected building is no longer highlighted,
+      // we clear the selection to avoid showing stale info.
       if (ids.length > 0 && selected && !ids.includes(selected.id)) {
         setSelected(null);
       }
@@ -75,6 +104,9 @@ function App() {
     setSelected(null);
   }
 
+  // ----------------------------------------------------
+  // Render
+  // ----------------------------------------------------
   return (
     <div className="App">
       {/* MASIV-style header */}
@@ -87,7 +119,10 @@ function App() {
           <div className="ms-hero-grid" />
           <div className="ms-hero-content">
             <h1>CALGARY 3D CITY</h1>
-            <p>Data-driven, design-led visualization of Calgary&apos;s built form.</p>
+            <p>
+              Data-driven, design-led visualization of Calgary&apos;s built
+              form.
+            </p>
           </div>
         </div>
       </header>
@@ -97,12 +132,14 @@ function App() {
           <div className="ms-intro">
             <h2>3D City Dashboard</h2>
             <p>
-              This prototype maps real Calgary buildings in three dimensions and lets you
-              query them using natural language. Type a question, or use one of the
-              preset queries below, to highlight buildings by height, value, or zoning.
+              This prototype maps real Calgary buildings in three dimensions and
+              lets you query them using natural language. Type a question, or
+              use one of the preset queries below, to highlight buildings by
+              height, value, or zoning.
             </p>
           </div>
 
+          {/* Query input */}
           <form className="query-form" onSubmit={handleQuerySubmit}>
             <input
               name="query"
@@ -113,6 +150,7 @@ function App() {
             </button>
           </form>
 
+          {/* Preset query shortcuts */}
           <div className="preset-queries">
             {PRESET_QUERIES.map((p) => (
               <button
@@ -127,6 +165,7 @@ function App() {
             ))}
           </div>
 
+          {/* Simple stats + reset */}
           <div className="stats-bar">
             <span className="stats-pill">
               Total buildings: <b>{totalCount || "…"}</b>
@@ -150,6 +189,7 @@ function App() {
             )}
           </div>
 
+          {/* Debug panel toggle */}
           <div className="debug-toggle-row">
             <button
               type="button"
@@ -160,6 +200,7 @@ function App() {
             </button>
           </div>
 
+          {/* Parsed filter debug view */}
           {showDebug && (
             <div className="debug-panel">
               <h3>Parsed filter</h3>
@@ -171,6 +212,7 @@ function App() {
             </div>
           )}
 
+          {/* Main layout: map + info panel */}
           <div className="layout">
             <div className="map-column">
               {loadingBuildings ? (
