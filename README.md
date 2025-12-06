@@ -199,7 +199,7 @@ README.md
 This project can be deployed using any free hosting service. The sites that were used for this assessment are noted below.
 
 **Frontend**
-- Vercel  
+- Vercel: [Publicly Hosted WebSite](https://masiv-intern-test.vercel.app/)
 
 **Backend**
 - Render.com
