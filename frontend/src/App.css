@@ -317,3 +317,28 @@ header h1 {
     font-size: 1.5rem;
   }
 }
+
+.reset-button {
+  padding: 0.3rem 0.9rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-left: auto;
+  transition: transform 0.12s ease, box-shadow 0.12s ease,
+    filter 0.12s ease;
+}
+
+.reset-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow: 0 4px 10px rgba(220, 38, 38, 0.35);
+}
+
+.reset-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 5px rgba(220, 38, 38, 0.25);
+}

@@ -110,15 +110,32 @@ function App() {
         <span className="stats-pill">
           Total buildings: <b>{totalCount || "…"}</b>
         </span>
+
         <span className="stats-pill">
           Highlighted: <b>{highlightedCount}</b>
         </span>
+
         {selected && (
           <span className="stats-pill">
             Selected: <b>{selected.name || selected.id}</b>
           </span>
         )}
+
+        {highlightedCount > 0 && (
+          <button
+            type="button"
+            className="reset-button"
+            onClick={() => {
+              setFilteredIds([]);
+              setLastFilter(null);
+              setSelected(null);
+            }}
+          >
+            Reset highlights
+          </button>
+        )}
       </div>
+
 
       {/* Debug toggle + panel */}
       <div className="debug-toggle-row">
