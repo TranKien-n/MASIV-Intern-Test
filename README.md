@@ -1,159 +1,199 @@
-Calgary 3D City Dashboard
+# MASIV Internship Technical Assessment – 3D Calgary City Dashboard
 
-A fully interactive 3D urban analytics dashboard built with:
+## Author
+| Name | GitHub | Email |
+|------|--------|--------|
+| **Kien Tran** | `TranKien-n` | your-email@domain.com |
 
-React + Three.js for the 3D map
+---
 
-Flask backend for data + natural language interpretation
+## Project Description
 
-OSM Overpass API for real-world building footprints
+This project implements an interactive **3D building visualization dashboard** for a region of downtown Calgary.
 
-Custom NL Interpreter that turns English into filters
+The system retrieves real building footprints and attributes from **OpenStreetMap (OSM)** using the Overpass API, processes them in a **Flask backend**, and visualizes them through a **Three.js** rendering engine housed inside a React frontend.
 
-Automated highlighting, smooth camera transitions, and tooltips
+A natural-language query interface enables users to perform operations such as:
 
-This project allows users to explore real Calgary buildings and run natural-language queries like:
+- "highlight buildings over $1,000,000"
+- "tallest 3 buildings"
+- "commercial buildings"
+- "buildings between 30 and 60 meters"
 
-“highlight buildings over $1,000,000”
-“show the tallest 3 buildings”
-“highlight commercial buildings”
-“cheapest building”
+Queries are parsed into structured filter objects by the backend and then used to highlight buildings in the 3D scene.
 
-🚀 Features
-🗺 Interactive 3D Map
+---
 
-Real Calgary building footprints from OpenStreetMap
+## Key Features
 
-Extruded 3D forms with realistic height scaling
+### 1. Real OSM Building Data Integration
+- Building footprints retrieved via the Overpass API
+- Offline caching using `buildings_cache.json` for reliability
+- Normalization of height, zoning, value, and type attributes
 
-OrbitControls (pan, zoom, rotate)
+### 2. 3D Visualization (Three.js + React)
+- Buildings extruded based on footprint geometry and height
+- Clean lighting and shading for improved readability
+- Smooth camera transitions:
+  - Focus on clicked buildings  
+  - Focus on single-result queries  
+  - Reset camera view when clearing highlights
+- Hover tooltips for instant building information
+- Click-to-select building details panel
+- Highlighting of query results
 
-Smooth camera transitions (to selected building or one-result queries)
+### 3. Natural-Language Query Engine
+- Converts plain English text into structured filters
+- Supports:
+  - Numeric comparisons (`>`, `<`)
+  - Ranges (`between X and Y`)
+  - Ranking (`tallest`, `cheapest`, `top 3`)
+  - Zoning and type-based filters
+  - Value-based queries using currency expressions
+- Returns building IDs + parsed filter JSON for debugging
 
-Hover tooltips with building name + height
+### 4. User Interface Enhancements
+- Preset query buttons for quick demo interaction
+- "Reset Highlights" functionality
+- Debug panel showing parsed filter objects
+- Responsive UI design suitable for desktop usage
 
-Click buildings to view details
+---
 
-💬 Natural-Language Building Queries
+## Architecture Overview
 
-Powered by a custom interpreter (llm.py):
+```
+frontend (React) ----------------------> backend (Flask)
+     |                                        |
+     |   GET /api/buildings                   |
+     |   POST /api/query                      |
+     |                                        |
+ Three.js Scene                        Query Interpreter
+ Extruded Buildings                    Natural-Language Parsing
+ Highlight Rendering                   Filter Engine (TOP, >, <, BETWEEN)
+ Camera Controls                       OSM Data Loader + Cache
+```
 
-✔ “highlight buildings over $1000000”
-✔ “highlight the highest building”
-✔ “tallest 3 buildings”
-✔ “buildings between 30 and 60 meters”
-✔ “commercial buildings” / “residential”
-✔ “zoning C-COR”
+---
 
-Your query transforms into a filter dict:
+## Setup Instructions
 
-{
-  "attribute": "height",
-  "operator": "TOP",
-  "value": 3
-}
+### Backend Setup
 
-
-Used by backend filters.py to select buildings.
-
-🧭 Camera Intelligence
-
-Smooth ease into:
-
-clicked buildings
-
-queries that return exactly 1 result
-
-No movement for multi-result queries (good UX)
-
-Auto-reset when nothing is selected
-
-🎨 Polished UI
-
-Gradient background
-
-Rounded cards, subtle shadows
-
-Preset query buttons
-
-Debug panel toggle
-
-Reset Highlights button
-
-Responsive layout
-
-🗂 Backend Resilience
-
-OSM Overpass fetch with fallback caching
-
-If Overpass is down (504/429), app still runs using buildings_cache.json
-
-Consistent building schema:
-
-id
-
-name
-
-footprint
-
-height
-
-value
-
-zoning
-
-type
-
-🛠 Getting Started
-Backend
+```bash
 cd backend
 python -m venv venv
-.\venv\Scripts\Activate.ps1
+source venv/bin/activate          # Windows: .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python app.py
+```
 
-Frontend
+Backend will start on:
+
+```
+http://localhost:5000
+```
+
+---
+
+### Frontend Setup
+
+```bash
 cd frontend
 npm install
 npm start
+```
 
+Frontend will start on:
 
-Then open:
-👉 http://localhost:3000
+```
+http://localhost:3000
+```
 
-📝 Example Queries
-Query	Meaning
-“highlight the tallest 3 buildings”	TOP 3 heights
-“highlight buildings over $800000”	value > 800k
-“highlight commercial buildings”	zoning/type filter
-“between 30 and 50 meters”	height range
-“reset”	Clear highlights
-🤝 Credits
+---
 
-OSM Overpass data
+## Documentation
 
-Three.js for 3D rendering
+| Resource | Link |
+|---------|------|
+| UML Diagram | *To be added* |
+| Backend API | `/api/buildings`, `/api/query` |
+| OSM Query Definition | See `data_loader.py` |
+| Natural-Language Engine | `llm.py` |
+| Filter Logic | `filters.py` |
+| 3D Rendering Logic | `Map3D.js` |
 
-React + Flask
+---
 
-Custom NL-to-filter interpreter
+## Example Queries
 
-📌 Notes for Evaluators
+| Query | Interpretation |
+|-------|----------------|
+| "tallest building" | TOP 1 by height |
+| "tallest 3 buildings" | TOP 3 by height |
+| "over $1,000,000" | `value > 1,000,000` |
+| "commercial buildings" | zoning/type match |
+| "between 30 and 50 meters" | height range |
+| "reset" | clear all highlights |
 
-This project demonstrates:
+---
 
-Data ingestion + cleaning from third-party APIs
+## Project Structure
 
-Natural language interpretation
+```
+backend/
+  app.py
+  data_loader.py
+  filters.py
+  llm.py
+  buildings_cache.json
 
-Backend business logic
+frontend/
+  src/
+    App.js
+    Map3D.js
+    api.js
+    App.css
+    ...
+README.md
+```
 
-Frontend visualization + 3D rendering
+---
 
-Interactive UX design
+## Deployment
 
-Robust error handling & caching
+This project can be deployed using any free hosting service:
 
-Clean architecture
+**Frontend**
+- Vercel  
+- Netlify  
 
-All pieces work together to provide an intuitive, interactive, and insightful 3D urban data explorer.
+**Backend**
+- Render.com  
+- Railway.app  
+
+---
+
+## Status
+
+Core requirements implemented:
+
+- Real OSM data ingestion  
+- 3D building visualization  
+- Natural language query interpretation  
+- Highlighting and building selection  
+- Smoothed camera transitions  
+- Full UI integration  
+
+Optional revisions that can be added:
+
+- Full HuggingFace LLM integration  
+- UML diagram export  
+- Cloud deployment instructions  
+
+---
+
+## License
+
+This project is submitted as part of the MASIV Internship Technical Assessment and is intended solely for evaluation.
+
