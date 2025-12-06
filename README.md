@@ -205,6 +205,7 @@ This project can be deployed using any free hosting service. The sites that were
 - Render.com
 
 Both backend and frontend have been deployed successfully.
+
 ---
 
 ## Status
