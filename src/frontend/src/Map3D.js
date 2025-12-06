@@ -299,7 +299,7 @@ export default function Map3D({
   useEffect(() => {
     if (!cameraRef.current || buildings.length === 0) return;
 
-      let focusBuildings = null;
+    let focusBuildings = null;
 
     if (selectedBuilding) {
       // Always ease to clicked building
@@ -312,6 +312,7 @@ export default function Map3D({
       animatingRef.current = false;
       return;
     }
+
     // No focus set: go back to base center
     if (!focusBuildings || focusBuildings.length === 0) {
       const center = baseCenterRef.current;
@@ -322,15 +323,16 @@ export default function Map3D({
         center.y - span * 0.9,
         span * 1.5
       );
-      animatingRef.current = true; // smooth reset
+      animatingRef.current = true;
       return;
     }
 
-    // Compute bounding box of focused subset
+    // Compute bounding box and max height of focused subset
     let minX = Infinity,
       maxX = -Infinity;
     let minY = Infinity,
       maxY = -Infinity;
+    let maxH = 0;
 
     focusBuildings.forEach((b) => {
       (b.footprint || []).forEach(([x, y]) => {
@@ -339,24 +341,33 @@ export default function Map3D({
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
       });
+      if (b.height && b.height > maxH) {
+        maxH = b.height;
+      }
     });
 
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    const span = Math.max(maxX - minX, maxY - minY) || baseSpanRef.current;
+    // make sure span isn't crazy tiny
+    const span =
+      Math.max(maxX - minX, maxY - minY) || baseSpanRef.current || 50;
 
-    targetCenterRef.current.set(centerX, centerY, 0);
+    // Use building height to set vertical focus – aim near mid/top, not at ground
+    const heightOffset = maxH > 0 ? maxH : span; // fallback if no heights
+    const targetZ = heightOffset * 0.3; // aim around middle of tall buildings
 
-    const distFactor = 1.3;
+    targetCenterRef.current.set(centerX, centerY, targetZ);
+
+    const distFactor = 1.2;
     cameraPosTargetRef.current.set(
       centerX + span * distFactor,
-      centerY - span * distFactor,
-      span * 1.6
+      centerY - span * distFactor * 0.5, // a bit less horizontal tilt
+      heightOffset * 0.5 + span * 1.0 // keep camera above mid-height
     );
 
-    // 🔹 Trigger a new smooth animation towards this focus
-    animatingRef.current = true;
+    animatingRef.current = true; // trigger smooth animation
   }, [filteredIds, selectedBuilding, buildings]);
+
 
   return (
     <div
