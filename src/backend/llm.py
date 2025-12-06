@@ -2,7 +2,18 @@
 #   {"attribute": "height" | "value" | "zoning" | "type",
 #    "operator": ">" | "<" | "=" | "BETWEEN" | "TOP" | "BOTTOM",
 #    "value": number | string | [low, high]}
+
 import re
+import os
+import json
+import requests
+
+# --------------------------------------------------------------------
+# Hugging Face Inference API configuration
+# --------------------------------------------------------------------
+HF_API_KEY = os.getenv("HF_API_KEY")  # set this in env (local + Render)
+HF_MODEL_ID = os.getenv("HF_MODEL_ID", "mistralai/Mixtral-8x7B-Instruct")
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}"
 
 HEIGHT_KEYWORDS = (
     "height", "tall", "taller", "tallest", "short", "shorter",
@@ -22,7 +33,6 @@ ZONING_KEYWORDS = (
 
 RESET_KEYWORDS = ("reset", "clear", "show all", "all buildings")
 
-# --- NEW: ordinal words map ---
 ORDINAL_WORDS = {
     "first": 1,
     "second": 2,
@@ -74,7 +84,6 @@ def _convert_units(q_lower: str, number: float) -> float:
     return number
 
 
-# --- NEW: ordinal helper ---
 def _match_ordinal(q_lower: str):
     """
     Return an integer ordinal (2 for 'second', 3 for '3rd', etc.)
@@ -96,12 +105,12 @@ def _match_ordinal(q_lower: str):
     return None
 
 
-def interpret_query(query: str):
+# --------------------------------------------------------------------
+# RULE-BASED INTERPRETER (your original logic)
+# --------------------------------------------------------------------
+def _interpret_rule_based(query: str):
     """
-    Main entry point used by Flask.
-    Returns either:
-      - a filter dict, or
-      - None if we deliberately decide "no filter" (e.g., reset).
+    Your existing deterministic interpreter.
     """
     if not query or not query.strip():
         return None
@@ -115,7 +124,7 @@ def interpret_query(query: str):
     if any(kw in q_lower for kw in RESET_KEYWORDS):
         return None
 
-    # --- NEW: Ordinal-based ranking: "second tallest", "3rd most expensive" ---
+    # --- Ordinal-based ranking: "second tallest", "3rd most expensive" ---
     ordinal = _match_ordinal(q_lower)
     if ordinal is not None:
         # Height-based: "second tallest", "3rd highest building"
@@ -277,3 +286,101 @@ def interpret_query(query: str):
 
     # If we get here, we couldn't confidently interpret the query.
     return None
+
+
+# --------------------------------------------------------------------
+# HUGGING FACE CALL
+# --------------------------------------------------------------------
+def _call_hf_llm(query: str):
+    """
+    Try to use a Hugging Face text generation model to produce
+    a filter JSON. Returns a dict or None on any failure.
+    """
+    if not HF_API_KEY:
+        return None
+
+    prompt = f"""
+You are a backend for a 3D city dashboard. Convert the user's query
+into a JSON filter with this exact schema:
+
+{{
+  "attribute": "height" | "value" | "zoning" | "type",
+  "operator": ">" | "<" | "=" | "BETWEEN" | "TOP" | "BOTTOM",
+  "value": number | string | [number, number]
+}}
+
+Examples:
+- "highlight the tallest building" ->
+  {{"attribute": "height", "operator": "TOP", "value": 1}}
+- "highlight the tallest 3 buildings" ->
+  {{"attribute": "height", "operator": "TOP", "value": 3}}
+- "highlight buildings over $1,000,000" ->
+  {{"attribute": "value", "operator": ">", "value": 1000000}}
+
+Respond with JSON only, no explanation.
+
+User query: "{query}"
+"""
+
+    headers = {
+        "Authorization": f"Bearer {HF_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        resp = requests.post(
+            HF_API_URL,
+            headers=headers,
+            json={"inputs": prompt},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        # text-generation models typically return a list with "generated_text"
+        if isinstance(data, list) and data and "generated_text" in data[0]:
+            text = data[0]["generated_text"]
+        else:
+            text = str(data)
+
+        # Extract first {...} block from the text
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+
+        json_str = text[start : end + 1]
+        filt = json.loads(json_str)
+
+        # basic sanity check
+        if not isinstance(filt, dict):
+            return None
+        if "attribute" not in filt or "operator" not in filt:
+            return None
+
+        return filt
+    except Exception as e:
+        print("[HF_LLM] Error calling Hugging Face:", repr(e))
+        return None
+
+
+# --------------------------------------------------------------------
+# Public entry point used by Flask
+# --------------------------------------------------------------------
+def interpret_query(query: str):
+    """
+    Main entry point used by Flask.
+
+    1) Try Hugging Face Inference API (if configured).
+    2) Fall back to the rule-based interpreter if HF is not available
+       or returns an invalid result.
+    """
+    hf_filter = _call_hf_llm(query)
+    if hf_filter:
+        print("[HF_LLM] Using Hugging Face filter:", hf_filter)
+        return hf_filter
+
+    # Fallback to your original deterministic logic
+    rb_filter = _interpret_rule_based(query)
+    print("[RULE_BASED] Using rule-based filter:", rb_filter)
+    return rb_filter
