@@ -1,19 +1,17 @@
 """
-Hybrid natural-language query interpreter.
+Hybrid natural-language query interpreter for the MASIV 3D Calgary City Dashboard.
+
+It returns a structured "filter" dict of the form:
+
+    {
+      "attribute": "height" | "value" | "zoning" | "type",
+      "operator": ">" | "<" | "=" | "BETWEEN" | "TOP" | "BOTTOM",
+      "value": number | string | [low, high]
+    }
 
 Pipeline:
-  1. Try Hugging Face Inference API (if configured via HF_API_KEY).
-  2. If HF call fails or returns invalid output, fall back to a
-     deterministic rule-based interpreter.
-
-All paths return either:
-  - a filter dict of the form:
-        {
-          "attribute": "height" | "value" | "zoning" | "type",
-          "operator": ">" | "<" | "=" | "BETWEEN" | "TOP" | "BOTTOM",
-          "value": number | string | [low, high]
-        }
-  - or None if the query should be treated as "no filter".
+  1. Try Hugging Face Inference API (if HF_API_KEY is set).
+  2. Fall back to a deterministic rule-based interpreter.
 """
 
 import os
@@ -24,8 +22,8 @@ import requests
 # --------------------------------------------------------------------
 # Hugging Face Inference API configuration
 # --------------------------------------------------------------------
-HF_API_KEY = os.getenv("HF_API_KEY")  # set this in env (local + Render)
-HF_MODEL_ID = os.getenv("HF_MODEL_ID", "mistralai/Mixtral-8x7B-Instruct")
+HF_API_KEY = os.getenv("HF_API_KEY")
+HF_MODEL_ID = os.getenv("HF_MODEL_ID", "google/flan-t5-base")
 HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}"
 
 HEIGHT_KEYWORDS = (
@@ -45,7 +43,6 @@ HEIGHT_KEYWORDS = (
     "ft",
     "meter",
     "metre",
-    "m",
 )
 
 VALUE_KEYWORDS = (
@@ -107,6 +104,7 @@ def _guess_attribute(q_lower: str, original: str) -> str:
     """
     if any(k in q_lower for k in HEIGHT_KEYWORDS):
         return "height"
+    # If they mention money words OR use a '$', assume value
     if any(k in q_lower for k in VALUE_KEYWORDS) or "$" in original:
         return "value"
     if any(k in q_lower for k in ZONING_KEYWORDS):
@@ -126,6 +124,53 @@ def _convert_units(q_lower: str, number: float) -> float:
     if "feet" in q_lower or "foot" in q_lower or "ft" in q_lower:
         return number * 0.3048  # feet -> meters
     return number
+
+
+def _parse_number_token(token: str, attr: str):
+    """
+    Parse a numeric token that may have K/M/B suffixes.
+
+    Examples:
+      "100"  -> 100
+      "1k"   -> 1000
+      "2.5m" -> 2500000
+      "3b"   -> 3000000000
+
+    For height queries (attr == "height"), we ignore the K/M/B scaling
+    and just use the base number, so "50m" is treated as 50 (meters),
+    with unit conversion handled separately by _convert_units().
+    """
+    if not token:
+        return None
+
+    s = token.strip().lower()
+
+    # Allow an optional suffix k/m/b
+    m = re.match(r"^(\d+(?:\.\d+)?)([kmb])?$", s)
+    if m:
+        base = _to_float(m.group(1))
+        suffix = m.group(2)
+
+        if base is None:
+            return None
+
+        # For height queries we ignore suffix scaling
+        if attr == "height":
+            return base
+
+        # For value queries, apply scaling
+        if suffix == "k":
+            return base * 1_000
+        if suffix == "m":
+            return base * 1_000_000
+        if suffix == "b":
+            return base * 1_000_000_000
+
+        # No suffix
+        return base
+
+    # Fallback: plain float
+    return _to_float(s)
 
 
 def _match_ordinal(q_lower: str):
@@ -163,6 +208,7 @@ def _interpret_rule_based(query: str):
       - Inequalities ("over X", "under Y")
       - Zoning / type queries ("commercial buildings")
       - Simple defaults for "tall", "short", "expensive", "cheap"
+      - K/M/B suffixes for value queries (1k, 2m, 3b)
     """
     if not query or not query.strip():
         return None
@@ -270,41 +316,53 @@ def _interpret_rule_based(query: str):
 
     # --- Range queries: "between X and Y" ---
     between_match = re.search(
-        r"between\s+(\d+(?:\.\d+)?)\s+and\s+(\d+(?:\.\d+)?)",
+        r"between\s+(\d+(?:\.\d+)?[kmb]?)\s+and\s+(\d+(?:\.\d+)?[kmb]?)",
         q_clean,
     )
     if between_match:
-        low = _to_float(between_match.group(1))
-        high = _to_float(between_match.group(2))
+        raw1 = between_match.group(1)
+        raw2 = between_match.group(2)
+        attr = _guess_attribute(q_lower, q_raw)
+
+        low = _parse_number_token(raw1, attr)
+        high = _parse_number_token(raw2, attr)
+
         if low is not None and high is not None and low <= high:
-            attr = _guess_attribute(q_lower, q_raw)
             if attr == "height":
                 low = _convert_units(q_lower, low)
                 high = _convert_units(q_lower, high)
-            return {"attribute": attr, "operator": "BETWEEN", "value": [low, high]}
+            return {
+                "attribute": attr,
+                "operator": "BETWEEN",
+                "value": [low, high],
+            }
 
     # --- "over / greater than / above" ---
     over_match = re.search(
-        r"(over|greater than|more than|above)\s+(\d+(?:\.\d+)?)",
+        r"(over|greater than|more than|above)\s+(\d+(?:\.\d+)?[kmb]?)",
         q_clean,
     )
     if over_match:
-        num = _to_float(over_match.group(2))
+        raw = over_match.group(2)
+        attr = _guess_attribute(q_lower, q_raw)
+
+        num = _parse_number_token(raw, attr)
         if num is not None:
-            attr = _guess_attribute(q_lower, q_raw)
             if attr == "height":
                 num = _convert_units(q_lower, num)
             return {"attribute": attr, "operator": ">", "value": num}
 
     # --- "under / less than / below" ---
     under_match = re.search(
-        r"(under|less than|below|smaller than)\s+(\d+(?:\.\d+)?)",
+        r"(under|less than|below|smaller than)\s+(\d+(?:\.\d+)?[kmb]?)",
         q_clean,
     )
     if under_match:
-        num = _to_float(under_match.group(2))
+        raw = under_match.group(2)
+        attr = _guess_attribute(q_lower, q_raw)
+
+        num = _parse_number_token(raw, attr)
         if num is not None:
-            attr = _guess_attribute(q_lower, q_raw)
             if attr == "height":
                 num = _convert_units(q_lower, num)
             return {"attribute": attr, "operator": "<", "value": num}
@@ -318,11 +376,13 @@ def _interpret_rule_based(query: str):
                 return {"attribute": "zoning", "operator": "=", "value": candidate}
 
     # --- Bare numeric with no explicit operator (assume "> number") ---
-    nums = re.findall(r"(\d+(?:\.\d+)?)", q_clean)
+    nums = re.findall(r"(\d+(?:\.\d+)?[kmb]?)", q_clean)
     if nums:
-        num = _to_float(nums[0])
+        raw = nums[0]
+        attr = _guess_attribute(q_lower, q_raw)
+
+        num = _parse_number_token(raw, attr)
         if num is not None:
-            attr = _guess_attribute(q_lower, q_raw)
             if attr == "height":
                 num = _convert_units(q_lower, num)
             return {"attribute": attr, "operator": ">", "value": num}
