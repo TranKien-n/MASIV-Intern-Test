@@ -9,18 +9,17 @@
 
 ## Project Description
 
-This project implements an interactive **3D building visualization dashboard** for a region of downtown Calgary.
+This project implements an interactive **3D building visualization dashboard** for a section of downtown Calgary.
 
-The system retrieves real building footprints and attributes from **OpenStreetMap (OSM)** using the Overpass API, processes them in a **Flask backend**, and visualizes them through a **Three.js** rendering engine housed inside a React frontend.
+A Flask backend loads real-world building footprints and attributes from OpenStreetMap (OSM) (via cached Overpass-derived data), while a React + Three.js frontend renders the city in 3D with smooth navigation, building selection, and natural-language search.
 
-A natural-language query interface enables users to perform operations such as:
-
-- "highlight buildings over $1,000,000"
-- "tallest 3 buildings"
-- "commercial buildings"
-- "buildings between 30 and 60 meters"
-
-Queries are parsed into structured filter objects by the backend and then used to highlight buildings in the 3D scene.
+A built-in natural-language query engine enables users to type queries such as:
+  -“highlight buildings over $1,000,000”
+  -“tallest 3 buildings”
+  -“second tallest building”
+  -“commercial zoning”
+  -“buildings between 30 and 60 meters”
+The backend interprets these queries (using a hybrid LLM + rule-based approach) and returns matched building IDs for highlighting in the 3D view.
 
 ---
 
@@ -31,19 +30,45 @@ Queries are parsed into structured filter objects by the backend and then used t
 - Offline caching using `buildings_cache.json` for reliability
 - Normalization of height, zoning, value, and type attributes
 
-### 2. 3D Visualization (Three.js + React)
-- Buildings extruded based on footprint geometry and height
-- Clean lighting and shading for improved readability
-- Smooth camera transitions:
-  - Focus on clicked buildings  
-  - Focus on single-result queries  
-  - Reset camera view when clearing highlights
-- Hover tooltips for instant building information
-- Click-to-select building details panel
-- Highlighting of query results
+### 2. 3D Visualization (React + Three.js)
+- Extruded buildings based on footprint geometry and height  
+- Ambient/directional lighting for depth clarity  
+- Smooth camera transitions:  
+  - Auto-focus on clicked buildings  
+  - Auto-focus when exactly one building matches a query  
+  - Reset view when clearing highlights  
+- Interaction features:  
+  - Hover tooltip with building metadata  
+  - Click-to-select information panel  
+  - Dynamic highlighting of filtered buildings
+  
 
-### 3. Natural-Language Query Engine
-- Converts plain English text into structured filters
+### 3. Natural-Language Query Engine (Hybrid LLM + Rule-Based)
+The backend uses a **hybrid query interpretation pipeline**:
+
+#### 🔹 Hugging Face LLM Integration (implemented)
+
+The backend attempts to parse the user query using a free-tier model from the **Hugging Face Inference API**, configured via environment variables:
+  - HF_API_KEY
+  - HF_MODEL_ID
+- The LLM is instructed to output JSON in this exact schema:
+```json
+{
+  "attribute": "height" | "value" | "zoning" | "type",
+  "operator": ">" | "<" | "=" | "BETWEEN" | "TOP" | "BOTTOM",
+  "value": number | string | [number, number]
+}
+```
+If the model returns valid JSON, the backend uses it directly.
+
+If the LLM request fails (e.g., free-tier model unavailable), the backend logs:
+```bash
+[HF_LLM] Error calling Hugging Face: ...
+```
+and switches to the rule-based interpreter.
+
+#### 🔹 Rule-Based Interpreter (Guaranteed Fallback)
+Converts plain English text into structured filters
 - Supports:
   - Numeric comparisons (`>`, `<`)
   - Ranges (`between X and Y`)
@@ -52,9 +77,13 @@ Queries are parsed into structured filter objects by the backend and then used t
   - Value-based queries using currency expressions
 - Returns building IDs + parsed filter JSON for debugging
 
+Together, this ensures consistent behavior and complete reliability, even when the LLM cannot be reached.
+
 ### 4. User Interface Enhancements
 - Preset query buttons for quick demo interaction
-- "Reset Highlights" functionality
+- "Reset Highlights" button
+- Hover tooltip for quick inspection
+- Click-to-select details sidebar
 - Debug panel showing parsed filter objects
 - Responsive UI design suitable for desktop usage
 
@@ -69,7 +98,7 @@ frontend (React) ----------------------> backend (Flask)
      |   POST /api/query                      |
      |                                        |
  Three.js Scene                        Query Interpreter
- Extruded Buildings                    Natural-Language Parsing
+ Extruded Buildings                    LLM Integration (HuggingFace API)
  Highlight Rendering                   Filter Engine (TOP, >, <, BETWEEN)
  Camera Controls                       OSM Data Loader + Cache
 ```
@@ -83,7 +112,7 @@ frontend (React) ----------------------> backend (Flask)
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate          # Windows: .\venv\Scripts\Activate.ps1
+source venv/bin/activate          # For Windows: .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python app.py
 ```
@@ -119,10 +148,10 @@ http://localhost:3000
 | Class UML Diagram | [View Class UML](https://github.com/TranKien-n/MASIV-Intern-Test/blob/main/uml/ClassDiagram.png) |
 | Sequence UML Diagram | [View Sequence UML](https://github.com/TranKien-n/MASIV-Intern-Test/blob/main/uml/SequenceDiagram.png) |
 | Backend API | `/api/buildings`, `/api/query` |
-| OSM Query Definition | See `data_loader.py` |
+| OSM Data Loader | See `data_loader.py` |
 | Natural-Language Engine | `llm.py` |
 | Filter Logic | `filters.py` |
-| 3D Rendering Logic | `Map3D.js` |
+| 3D Rendering | `Map3D.js` |
 
 ---
 
@@ -133,7 +162,7 @@ http://localhost:3000
 | "tallest building" | TOP 1 by height |
 | "tallest 3 buildings" | TOP 3 by height |
 | "over $1,000,000" | `value > 1,000,000` |
-| "commercial buildings" | zoning/type match |
+| "commercial buildings" | zoning/type = commercial |
 | "between 30 and 50 meters" | height range |
 | "reset" | clear all highlights |
 
@@ -167,16 +196,15 @@ README.md
 
 ## Deployment
 
-This project can be deployed using any free hosting service:
+This project can be deployed using any free hosting service. The sites that were used for this assessment are noted below.
 
 **Frontend**
 - Vercel  
-- Netlify  
 
 **Backend**
-- Render.com  
-- Railway.app  
+- Render.com
 
+Both backend and frontend have been deployed successfully.
 ---
 
 ## Status
@@ -192,9 +220,8 @@ Core requirements implemented:
 
 Optional revisions that can be added:
 
-- Full HuggingFace LLM integration  
-- UML diagram export  
-- Cloud deployment instructions  
+- More capable HuggingFace model
+- Additional UI polish
 
 ---
 
