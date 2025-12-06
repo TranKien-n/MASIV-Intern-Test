@@ -3,7 +3,7 @@
 ## Author
 | Name | GitHub | Email |
 |------|--------|--------|
-| **Kien Tran** | `TranKien-n` | your-email@domain.com |
+| **Kien Tran** | `TranKien-n` | trankien421@gmail.com |
 
 ---
 
@@ -116,8 +116,8 @@ http://localhost:3000
 
 | Resource | Link |
 |---------|------|
-| Class UML Diagram | *To be added* |
-| Sequence UML Diagram | |
+| Class UML Diagram | [View Class UML](https://github.com/TranKien-n/MASIV-Intern-Test/uml/ClassDiagram.png) |
+| Sequence UML Diagram | [View Sequence UML](https://github.com/TranKien-n/MASIV-Intern-Test/uml/SequenceDiagram.png) |
 | Backend API | `/api/buildings`, `/api/query` |
 | OSM Query Definition | See `data_loader.py` |
 | Natural-Language Engine | `llm.py` |
